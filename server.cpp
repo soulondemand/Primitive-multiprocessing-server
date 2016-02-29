@@ -13,6 +13,9 @@
 #include <sys/epoll.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/sendfile.h>
 
 #define DEBUG
 #include "local_def.h"
@@ -45,7 +48,7 @@ void reap_child(int signum){
 
 using namespace std;
 
-void child_event_loop(int i, int childListenSocket);
+void child_event_loop(int i, int childListenSocket, string root_directory);
 int parse_request(string &str_request, string &method, string &uri, string &http_ver); 
 
 
@@ -62,6 +65,11 @@ int main(int argc, char **argv) {
 	//TODO: разбор командной строки
 	//--------------------------------
 	//parce_cmd_line(argc, argv, ip_str, port_str, root_directory);
+	string ip_str = "127.0.0.1";
+	string port_str = "12345";
+	string root_directory = "sites";
+	if( root_directory.back() == '/' )
+		root_directory = root_directory.substr(0, (root_directory.length() - 1));
 
 	//--------------------------------
 	//TODO: Демонизация
@@ -93,16 +101,14 @@ int main(int argc, char **argv) {
 					close(child[j].fd_ch2child);
 				}
 			}
-			child_event_loop(i, child[i].fd_ch2parent);
+			child_event_loop(i, child[i].fd_ch2parent, root_directory);
 		}
 
 	}
 	//---------------------------------------
 	// Прием и передача сетевых соединиений
 	//---------------------------------------
-	string ip_str = "127.0.0.1";
-	string port_str = "12345";
-	string root_directory = "sites";
+				
 
 	ip = inet_addr(ip_str.c_str());
 	listen_port = (unsigned int) atol(port_str.c_str());
@@ -110,7 +116,7 @@ int main(int argc, char **argv) {
 	int MasterSocket = socket(
 			AF_INET /* IPv4*/,
 			SOCK_STREAM /* TCP */,
-			IPPROTO_TCP);
+			IPPROTO_TCP | SO_REUSEADDR);
 	struct sockaddr_in SockAddr;
 	SockAddr.sin_family = AF_INET;
 	//SockAddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -119,8 +125,11 @@ int main(int argc, char **argv) {
 	SockAddr.sin_port   = htons(listen_port);
 
 
-	CHK2( MasterSocket , socket(PF_INET, SOCK_STREAM, 0) );
+	CHK2( MasterSocket , socket(PF_INET, SOCK_STREAM, IPPROTO_TCP) );
 	DBG( printf("master: Main listener(fd=%d) created! \n", MasterSocket); )
+	
+	int optval = 1;
+	setsockopt(MasterSocket, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
 	
 	CHK( bind(MasterSocket, (struct sockaddr *) (&SockAddr), sizeof(SockAddr)) );
 	DBG( printf("master: Listener binded to: %s\n", port_str.c_str()); )
@@ -148,10 +157,19 @@ int main(int argc, char **argv) {
 //-------------------------
 // цикл событий worker'ов
 //-------------------------
-void child_event_loop(int children_i, int fd_ch2parent) {
+void child_event_loop(int children_i, int fd_ch2parent, string root_directory) {
 	//size_t max_len_request = 1024;
 	//size_t max_num_request = 1000;
 	//char *buf_request;
+	static const char* templ = "HTTP/1.0 200 OK\r\n"
+					           "Content-length: %d\r\n"
+							   "Connection: close\r\n"
+							   "Content-Type: text/html\r\n"
+							   "\r\n";
+
+
+	static const char not_found[] = "HTTP/1.0 404 NOT FOUND\r\nContent-Type: text/html\r\n\r\n";
+
 	map<int, string> str_request; // num_socket:str_request;
 
 	int epfd;
@@ -225,7 +243,27 @@ void child_event_loop(int children_i, int fd_ch2parent) {
 				map<string, string> headers;
 				string method, uri, http_ver;
 				parse_request(str_request[currfd], method, uri, http_ver);
-
+				string target_file;
+				int pos_param = uri.find("?");
+				if(pos_param != string::npos)
+					 target_file= uri.substr(0, pos_param);
+				else
+					 target_file= uri;
+				//cout << "Target file: " <<  target_file << endl;
+				string fullpath = root_directory + target_file;
+				FILE *fp = fopen(fullpath.c_str(), "r");
+				if(fp == NULL) {
+					write(currfd, not_found, sizeof(not_found));
+					close(currfd);
+				} else {
+					struct stat buf;
+					fstat(fileno(fp), &buf);
+					int file_size = buf.st_size;
+					dprintf(currfd, templ, file_size);
+					sendfile(currfd, fileno(fp), NULL, file_size);
+					fclose(fp);
+					close(currfd);
+				}
 			}
 		}
 	}
@@ -255,6 +293,10 @@ int parse_request(string &str_request, string &method, string &uri, string &http
 	method = m[1];
 	uri	   = m[2];
 	http_ver = m[3];
+	//cout << "Method: " << method << endl;
+	//cout << "URI: " << uri<< endl;
+	//cout << "http_ver: " << http_ver << endl;
+	// root_directory 
 
 
 	//----------------------------------------------------------------------------
