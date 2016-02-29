@@ -1,4 +1,6 @@
 #include <iostream>
+#include <map>
+#include <regex>
 #include <stdio.h>
 #include <string>
 #include <cstdlib>
@@ -11,9 +13,10 @@
 #include <sys/epoll.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include "http-parser/http_parser.h"
 
 #define DEBUG
-#include "serv_def.h"
+#include "local_def.h"
 
 #define NUM_CHILD 2
 #define STR1 "How are you?"
@@ -41,9 +44,10 @@ void reap_child(int signum){
 	}
 }
 
-void child_event_loop(int i, int childListenSocket);
-
 using namespace std;
+
+void child_event_loop(int i, int childListenSocket);
+int parse_request(string &str_request, string &method, string &uri, string &http_ver); 
 
 
 int main(int argc, char **argv) {
@@ -116,13 +120,13 @@ int main(int argc, char **argv) {
 	SockAddr.sin_port   = htons(listen_port);
 
 
-	CHK2( MasterSocket , socket(PF_INET, SOCK_STREAM, 0));
-	DBG( printf("master: Main listener(fd=%d) created! \n", MasterSocket);)
+	CHK2( MasterSocket , socket(PF_INET, SOCK_STREAM, 0) );
+	DBG( printf("master: Main listener(fd=%d) created! \n", MasterSocket); )
 	
-	CHK( bind(MasterSocket, (struct sockaddr *) (&SockAddr), sizeof(SockAddr)));
-	DBG( printf("master: Listener binded to: %s\n", port_str.c_str());)
+	CHK( bind(MasterSocket, (struct sockaddr *) (&SockAddr), sizeof(SockAddr)) );
+	DBG( printf("master: Listener binded to: %s\n", port_str.c_str()); )
 	
-	CHK( listen(MasterSocket, SOMAXCONN));
+	CHK( listen(MasterSocket, SOMAXCONN) );
 
 	int conn_sock;
 	//event loop for listen socket
@@ -132,6 +136,7 @@ int main(int argc, char **argv) {
 		DBG( printf("master: New client (fd = %d)\n", conn_sock);)
 		set_nonblock(conn_sock);
 		char ch[] = "1";
+		// TODO: выбор потомков для работы
 		size = sock_fd_write(child[0].fd_ch2child, ch, 1, conn_sock);
 		DBG( printf ("master: wrote %d byte to worker (fd passing)\n", size);)
 			close(conn_sock);
@@ -145,6 +150,11 @@ int main(int argc, char **argv) {
 // цикл событий worker'ов
 //-------------------------
 void child_event_loop(int children_i, int fd_ch2parent) {
+	//size_t max_len_request = 1024;
+	//size_t max_num_request = 1000;
+	//char *buf_request;
+	map<int, string> str_request; // num_socket:str_request;
+
 	int epfd;
 	struct epoll_event Event;
 	struct epoll_event Events[MAX_EVENTS]; 
@@ -154,43 +164,130 @@ void child_event_loop(int children_i, int fd_ch2parent) {
 	char buf[BUF_SIZE];
 	memset(buf, 0, BUF_SIZE);
 
-	CHK2(epfd, epoll_create1(0));
-	DBG(printf("children %d: epoll created\n", children_i);)
+	CHK2( epfd, epoll_create1(0));
+	DBG( printf("children %d: epoll created\n", children_i);)
 
-	Event.data.fd = fd_ch2parent;
+		Event.data.fd = fd_ch2parent;
 	Event.events = EPOLLIN;
 	CHK(epoll_ctl(epfd, EPOLL_CTL_ADD, fd_ch2parent, &Event) == -1)
-	DBG(printf("children %d: listen socket added to epoll\n", children_i);)
-	int conn_sock;
+		DBG( printf("children %d: listen socket added to epoll\n", children_i);)
+		int conn_sock;
 	int epoll_events_count;
 	//event loop of child 
 	while(true) {
-		CHK2(epoll_events_count, epoll_wait(epfd, Events, MAX_EVENTS,-1));
-		DBG(printf("children %d: Epoll events count: %d\n", children_i, epoll_events_count);)
-			for(i = 0; i < epoll_events_count ; ++i) {
-				int currfd = Events[i].data.fd;
-				// Сообщение с канала от родителя - принимаем дескриптор нового соединения
-				if (Events[i].data.fd == fd_ch2parent) {
-					size = sock_fd_read(fd_ch2parent, buf, sizeof(buf), &conn_sock);
-					if (size <= 0)
-						break;
-					DBG(printf("children %d: read %d byte (fd passing)\n", children_i, size);)
-					DBG(printf("children %d: New client (fd = %d)\n", children_i,  conn_sock);)
-					Event.events = EPOLLIN;// | EPOLLET;
-					Event.data.fd = conn_sock;
-					CHK( epoll_ctl(epfd, EPOLL_CTL_ADD, conn_sock,	&Event) == -1) 
-					DBG( printf("children %d: Added new client (fd = %d) to epoll\n", children_i,  conn_sock);)
-						write(Events[i].data.fd, "#Hello, client!\n", 16);
-				} else {
-					DBG(printf("children %d: Try to read from fd(%d)\n", children_i, currfd);)
-						int len = recv(currfd, buf, BUF_SIZE, 0);
-					if( len == 0) {
-						close(currfd);
-					} else {
-						write(currfd, buf, len);
-					}	
+		CHK2( epoll_events_count, epoll_wait(epfd, Events, MAX_EVENTS,-1));
+		DBG( printf("children %d: Epoll events count: %d\n", children_i, epoll_events_count);)
+		for(i = 0; i < epoll_events_count ; ++i) {
+			int currfd = Events[i].data.fd;
+			// Сообщение с канала от родителя - принимаем дескриптор нового соединения
+			if (Events[i].data.fd == fd_ch2parent) {
+				size = sock_fd_read(fd_ch2parent, buf, sizeof(buf), &conn_sock);
+				if (size <= 0)
+					break;
+				DBG( printf("children %d: read %d byte (fd passing)\n", children_i, size);)
+				DBG( printf("children %d: New client (fd = %d)\n", children_i,  conn_sock);)
+				Event.events = EPOLLIN;// | EPOLLET;
+				Event.data.fd = conn_sock;
+				CHK( epoll_ctl(epfd, EPOLL_CTL_ADD, conn_sock,	&Event) == -1) 
+				DBG( printf("children %d: Added new client (fd = %d) to epoll\n", children_i,  conn_sock);)
+				//write(Events[i].data.fd, "#Hello, client!\n", 16);
+			} else { //событие от потомка
+				DBG(printf("children %d: Try to read from fd(%d)\n", children_i, currfd);)
+				int len = recv(currfd, buf, BUF_SIZE, 0);
+				if( len == 0) {
+					close(currfd);
+					break;
 				}
+
+				string chunk = string(buf, len);
+				//Оптимизации по работе со строками по добавлению новых chunks в запрос нет, не продакшн
+				//printf("\tПолучен chunk: %s\n",chunk.c_str());
+				//если запроса с таким дескриптором еще не было
+				if(str_request.find(currfd) == str_request.end()) {
+					//printf("\tНовый запрос\n");
+					str_request.insert(pair<int, string>(currfd,chunk));
+					//printf("\tВ буфере после добавления %d байт\n", str_request[currfd].length());
+				} else {
+					//printf("\tПовторный  запрос\n");
+					//printf("\tВ буфере перед добавлением %d байт\n", str_request[currfd].length());
+					str_request[currfd] += chunk;
+					//printf("\tВ буфере после добавления %d байт\n", str_request[currfd].length());
+				}
+				//write(STDOUT_FILENO, buf, len);
+				//write(STDOUT_FILENO, str_request[currfd].c_str(), str_request[currfd].length() );
+				if( (str_request[currfd].find("\n\n") == string::npos) && (str_request[currfd].find("\n\r\n") == string::npos))
+					continue;
+				write(STDOUT_FILENO, str_request[currfd].c_str(), str_request[currfd].length() );
+				
+				//-----------------------------------------------
+				// запрос полностью получен => парсим, отвечаем
+				//-----------------------------------------------
+				//write(currfd, buf, len);
+				map<string, string> headers;
+				string method, uri, http_ver;
+				parse_request(str_request[currfd], method, uri, http_ver);
+
 			}
+		}
 	}
 
 };
+
+int parse_request(string &str_request, string &method, string &uri, string &http_ver) {
+
+	int request_length = str_request.length();
+	if(request_length < sizeof("GET / HTTP/1.0\n"))
+		return 1;
+
+	size_t pos = 0; // prev_pos = 0, start_str_item = 0, end_str_item, delim_pos;
+	pos = str_request.find("\n");
+	if(str_request[pos-1] == '\r')
+		--pos;
+	string first_line = str_request.substr(0, pos);
+	//----------------------
+	// парсим первую строку
+	//----------------------
+	smatch m;
+	regex_constants::match_flag_type flags = regex_constants::format_first_only;                              
+	regex e ("(\\S+)\\s+(\\S+)\\s+(\\S+)");
+	if( regex_search(first_line, m, e, flags) == 0 )
+		return 1;
+	//for (auto x:m) cout << "'" << x << "'" << endl;
+	method = m[1];
+	uri	   = m[2];
+	http_ver = m[3];
+
+
+	//----------------------------------------------------------------------------
+	// Парсить заголовки запроса кроме первой строки для задачи нет необходимости
+	//----------------------------------------------------------------------------
+
+	//++pos; //переходим на новую строку запроса
+	//string item;
+	//string name_header, value_header;
+	//while(pos < request_length) {
+	//	start_str_item = pos;
+	//	pos = str_request.find("\n");
+	//	if(pos == string::npos)   //больше нет в строке запроса \n
+	//	   break;
+	//	if(pos == start_str_item) //с начала нового блока поймали - больше нет данных в запросе
+	//		break;
+	//	if(str_request[pos-1] == '\r')
+	//		end_str_item = pos - 2;
+	//	else
+	//		end_str_item = pos - 1;
+	//	if(start_str_item <= end_str_item) //пустая строка
+	//		break;
+	//	
+	//	item = str_request.substr(start_str_item, (end_str_item - start_str_item + 1));
+	//	delim_pos = item.find(": ");
+	//	if(delim_pos == string::npos)
+	//		return 1;
+	//	if(delim_pos == 0 || delim_pos == (item.length() - 1) ) return 1; //invalid header
+	//	name_header  = item.substr(0, delim_pos - 1);
+	//	value_header = item.substr(delim_pos + 1, item.length() - 1 - delim_pos);
+	//}
+
+
+	return 0;
+}
