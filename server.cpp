@@ -168,7 +168,7 @@ void child_event_loop(int children_i, int fd_ch2parent, string root_directory) {
 							   "\r\n";
 
 
-	static const char not_found[] = "HTTP/1.0 404 NOT FOUND\r\nContent-Type: text/html\r\n\r\n";
+	static const char not_found[] = "HTTP/1.0 404 NOT FOUND\r\nContent-Type: text/html\r\n\r\n<h1>404 - File not found.</h1>";
 
 	map<int, string> str_request; // num_socket:str_request;
 
@@ -246,15 +246,15 @@ void child_event_loop(int children_i, int fd_ch2parent, string root_directory) {
 				string target_file;
 				int pos_param = uri.find("?");
 				if(pos_param != string::npos)
-					 target_file= uri.substr(0, pos_param);
+					 target_file = uri.substr(0, pos_param);
 				else
-					 target_file= uri;
+					 target_file = uri;
 				//cout << "Target file: " <<  target_file << endl;
 				string fullpath = root_directory + target_file;
 				FILE *fp = fopen(fullpath.c_str(), "r");
+				//cout << "\tFullpath: " << fullpath << endl;
 				if(fp == NULL) {
 					write(currfd, not_found, sizeof(not_found));
-					close(currfd);
 				} else {
 					struct stat buf;
 					fstat(fileno(fp), &buf);
@@ -262,8 +262,9 @@ void child_event_loop(int children_i, int fd_ch2parent, string root_directory) {
 					dprintf(currfd, templ, file_size);
 					sendfile(currfd, fileno(fp), NULL, file_size);
 					fclose(fp);
-					close(currfd);
 				}
+				close(currfd);
+				str_request[currfd] = "";
 			}
 		}
 	}
@@ -271,7 +272,6 @@ void child_event_loop(int children_i, int fd_ch2parent, string root_directory) {
 };
 
 int parse_request(string &str_request, string &method, string &uri, string &http_ver) {
-
 	int request_length = str_request.length();
 	if(request_length < sizeof("GET / HTTP/1.0\n"))
 		return 1;
