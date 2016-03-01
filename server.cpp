@@ -17,7 +17,7 @@
 #include <fcntl.h>
 #include <sys/sendfile.h>
 
-//#define DEBUG
+#define DEBUG
 #include "local_def.h"
 
 #define NUM_CHILD 3
@@ -205,7 +205,7 @@ void child_event_loop(int children_i, int fd_ch2parent, string root_directory) {
 
 
 	static const char not_found_header[] = "HTTP/1.0 404 NOT FOUND\r\n"
-		"Content-length: %d\r\n"
+		"Content-length: %u\r\n"
 		"Content-Type: text/html\r\n"
 		"\r\n";
 	static const char not_found_msg[]    = "<h1>404 - File not found.</h1>\r\n";
@@ -275,9 +275,9 @@ void child_event_loop(int children_i, int fd_ch2parent, string root_directory) {
 					//write(STDOUT_FILENO, str_request[currfd].c_str(), str_request[currfd].length() );
 					if( (str_request[currfd].find("\n\n") == string::npos) && (str_request[currfd].find("\n\r\n") == string::npos))
 						continue;
-					DBG( write(STDOUT_FILENO, "------------------------request--------------------------" ));
-					DBG( write(STDOUT_FILENO, str_request[currfd].c_str(), str_request[currfd].length() ));
-					DBG( write(STDOUT_FILENO, "---------------------------------------------------------" ));
+					DBG( fprintf(stderr, "------------------------request--------------------------" ));
+					DBG( fprintf(stderr, str_request[currfd].c_str(), str_request[currfd].length() ));
+					DBG( fprintf(stderr, "---------------------------------------------------------" ));
 
 					//-----------------------------------------------
 					// запрос полностью получен => парсим, отвечаем
@@ -335,14 +335,14 @@ int parse_request(string &str_request, string &method, string &uri, string &http
 	//----------------------
 	// парсим первую строку
 	//----------------------
-	DBG( write(STDOUT_FILENO, "\t!!!! Parsing\n" ));
+	DBG( fprintf(stderr, "\t!!!! Parsing\n"););
 	smatch m;
 	regex_constants::match_flag_type flags = regex_constants::format_first_only;                              
 	regex e ("(\\S+)\\s+(\\S+)\\s+(\\S+)");
-	DBG( write(STDOUT_FILENO, "\tstart parsing\n" ));
+	DBG( fprintf(stderr, "\tstart parsing\n"););
 	if( regex_search(first_line, m, e, flags) == 0 )
 		return 1;
-	DBG( write(STDOUT_FILENO, "\tend parsing\n" ));
+	DBG( fprintf(stderr, "\tend parsing\n"););
 	//for (auto x:m) cout << "'" << x << "'" << endl;
 	method = m[1];
 	uri	   = m[2];
