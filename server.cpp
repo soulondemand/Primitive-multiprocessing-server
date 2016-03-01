@@ -17,7 +17,7 @@
 #include <fcntl.h>
 #include <sys/sendfile.h>
 
-#define DEBUG
+//#define DEBUG
 #include "local_def.h"
 
 #define NUM_CHILD 3
@@ -275,9 +275,9 @@ void child_event_loop(int children_i, int fd_ch2parent, string root_directory) {
 					//write(STDOUT_FILENO, str_request[currfd].c_str(), str_request[currfd].length() );
 					if( (str_request[currfd].find("\n\n") == string::npos) && (str_request[currfd].find("\n\r\n") == string::npos))
 						continue;
-					DBG( fprintf(stderr, "------------------------request--------------------------" ));
+					DBG( fprintf(stderr, "------------------------request--------------------------\n" ));
 					DBG( fprintf(stderr, str_request[currfd].c_str(), str_request[currfd].length() ));
-					DBG( fprintf(stderr, "---------------------------------------------------------" ));
+					DBG( fprintf(stderr, "---------------------------------------------------------\n" ));
 
 					//-----------------------------------------------
 					// запрос полностью получен => парсим, отвечаем
@@ -319,7 +319,7 @@ void child_event_loop(int children_i, int fd_ch2parent, string root_directory) {
 };
 
 //-------------------------
-// Парсим азпрос на сервер
+// Парсим запрос на сервер
 //-------------------------
 int parse_request(string &str_request, string &method, string &uri, string &http_ver) {
 	int request_length = str_request.length();
@@ -336,20 +336,27 @@ int parse_request(string &str_request, string &method, string &uri, string &http
 	// парсим первую строку
 	//----------------------
 	DBG( fprintf(stderr, "\t!!!! Parsing\n"););
-	smatch m;
-	regex_constants::match_flag_type flags = regex_constants::format_first_only;                              
-	regex e ("(\\S+)\\s+(\\S+)\\s+(\\S+)");
+	//smatch m;
+	//regex_constants::match_flag_type flags = regex_constants::format_first_only;                              
+	//regex e ("(\\S+)\\s+(\\S+)\\s+(\\S+)");
 	DBG( fprintf(stderr, "\tstart parsing\n"););
-	if( regex_search(first_line, m, e, flags) == 0 )
-		return 1;
-	DBG( fprintf(stderr, "\tend parsing\n"););
+	//if( regex_search(first_line, m, e, flags) == 0 )
+	//	return 1;
+	//DBG( fprintf(stderr, "\tend parsing\n"););
 	//for (auto x:m) cout << "'" << x << "'" << endl;
-	method = m[1];
-	uri	   = m[2];
-	http_ver = m[3];
-	//cout << "Method: " << method << endl;
-	//cout << "URI: " << uri<< endl;
-	//cout << "http_ver: " << http_ver << endl;
+	int pos1, pos2;
+	pos1 = str_request.find(" ");
+	method = str_request.substr(0, pos1);
+
+	pos1 = str_request.find("/", pos1 + 1);
+	pos2 = str_request.find(" ", pos1 + 1);
+	uri	 = str_request.substr(pos1, pos2 - pos1);
+	
+	pos1 = str_request.find("H", pos1 + 1); 
+	http_ver = str_request.substr(pos1, str_request.length() - pos1);
+	cout << "Method: '" << method << "'" <<  endl;
+	cout << "URI: '" << uri<< "'" << endl;
+	cout << "http_ver: '" << http_ver << "'" << endl;
 	// root_directory 
 
 
