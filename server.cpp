@@ -101,7 +101,12 @@ int main(int argc, char **argv) {
 	//--------------------------------
 	//TODO: Демонизация
 	//--------------------------------
-
+	
+	#ifndef DEBUG	
+	if( !daemonize() ) {
+		fprintf(stderr, "Failed to become daemon");
+	}
+	#endif
 
 	//--------------------------------
 	// Порождение потомков
