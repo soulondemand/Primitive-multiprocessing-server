@@ -295,7 +295,7 @@ void child_event_loop(int children_i, int fd_ch2parent, string root_directory) {
 					//cout << "Target file: " <<  target_file << endl;
 					string fullpath = root_directory + target_file;
 					FILE *fp = fopen(fullpath.c_str(), "r");
-					//cout << "\tFullpath: " << fullpath << endl;
+					DBG( cerr << "\tFullpath: " << fullpath << endl;)
 					//cout << "\tFILE: " << fp << endl;
 					if( fp == NULL || !is_regular_file(fullpath.c_str()) ) {
 						dprintf(currfd, not_found_header, sizeof(not_found_msg));
@@ -345,18 +345,18 @@ int parse_request(string &str_request, string &method, string &uri, string &http
 	//DBG( fprintf(stderr, "\tend parsing\n"););
 	//for (auto x:m) cout << "'" << x << "'" << endl;
 	int pos1, pos2;
-	pos1 = str_request.find(" ");
-	method = str_request.substr(0, pos1);
+	pos1 = first_line.find(" ");
+	method = first_line.substr(0, pos1);
 
-	pos1 = str_request.find("/", pos1 + 1);
-	pos2 = str_request.find(" ", pos1 + 1);
-	uri	 = str_request.substr(pos1, pos2 - pos1);
+	pos1 = first_line.find("/", pos1 + 1);
+	pos2 = first_line.find(" ", pos1 + 1);
+	uri	 = first_line.substr(pos1, pos2 - pos1);
 	
-	pos1 = str_request.find("H", pos1 + 1); 
-	http_ver = str_request.substr(pos1, str_request.length() - pos1);
-	cout << "Method: '" << method << "'" <<  endl;
-	cout << "URI: '" << uri<< "'" << endl;
-	cout << "http_ver: '" << http_ver << "'" << endl;
+	pos1 = first_line.find("H", pos1 + 1); 
+	http_ver = first_line.substr(pos1,  first_line.length() - pos1);
+	DBG( fprintf(stderr, "Metod: '%s'\n", method.c_str() ));
+	DBG( fprintf(stderr, "URI: '%s'\n", uri.c_str() ));
+	DBG( fprintf(stderr, "http_ver : '%s'\n", http_ver .c_str() ));
 	// root_directory 
 
 
