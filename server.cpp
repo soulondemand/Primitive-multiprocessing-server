@@ -256,7 +256,7 @@ void child_event_loop(int children_i, int fd_ch2parent, string root_directory) {
 						close(currfd);
 						break;
 					}
-
+			
 					string chunk = string(buf, len);
 					//Оптимизации по работе со строками по добавлению новых chunks в запрос нет, не продакшн
 					//printf("\tПолучен chunk: %s\n",chunk.c_str());
@@ -275,7 +275,9 @@ void child_event_loop(int children_i, int fd_ch2parent, string root_directory) {
 					//write(STDOUT_FILENO, str_request[currfd].c_str(), str_request[currfd].length() );
 					if( (str_request[currfd].find("\n\n") == string::npos) && (str_request[currfd].find("\n\r\n") == string::npos))
 						continue;
-					//write(STDOUT_FILENO, str_request[currfd].c_str(), str_request[currfd].length() );
+					DBG( write(STDOUT_FILENO, "------------------------request--------------------------" ));
+					DBG( write(STDOUT_FILENO, str_request[currfd].c_str(), str_request[currfd].length() ));
+					DBG( write(STDOUT_FILENO, "---------------------------------------------------------" ));
 
 					//-----------------------------------------------
 					// запрос полностью получен => парсим, отвечаем
@@ -323,7 +325,8 @@ int parse_request(string &str_request, string &method, string &uri, string &http
 	int request_length = str_request.length();
 	if(request_length < sizeof("GET / HTTP/1.0\n"))
 		return 1;
-
+	
+	
 	size_t pos = 0; // prev_pos = 0, start_str_item = 0, end_str_item, delim_pos;
 	pos = str_request.find("\n");
 	if(str_request[pos-1] == '\r')
@@ -332,11 +335,14 @@ int parse_request(string &str_request, string &method, string &uri, string &http
 	//----------------------
 	// парсим первую строку
 	//----------------------
+	DBG( write(STDOUT_FILENO, "\t!!!! Parsing\n" ));
 	smatch m;
 	regex_constants::match_flag_type flags = regex_constants::format_first_only;                              
 	regex e ("(\\S+)\\s+(\\S+)\\s+(\\S+)");
+	DBG( write(STDOUT_FILENO, "\tstart parsing\n" ));
 	if( regex_search(first_line, m, e, flags) == 0 )
 		return 1;
+	DBG( write(STDOUT_FILENO, "\tend parsing\n" ));
 	//for (auto x:m) cout << "'" << x << "'" << endl;
 	method = m[1];
 	uri	   = m[2];
