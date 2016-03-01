@@ -20,7 +20,7 @@
 #define DEBUG
 #include "local_def.h"
 
-#define NUM_CHILD 2
+#define NUM_CHILD 3
 #define STR1 "How are you?"
 #define STR2 "I'm ok, thank you."
 #define BUF_SIZE 1024
@@ -144,8 +144,13 @@ int main(int argc, char **argv) {
 		DBG( printf("master: New client (fd = %d)\n", conn_sock);)
 		set_nonblock(conn_sock);
 		char ch[] = "1";
-		// TODO: выбор потомков для работы
-		size = sock_fd_write(child[0].fd_ch2child, ch, 1, conn_sock);
+		//---------------------------
+		// Выбор потомков для работы
+		//---------------------------
+		static int curr_children = 0;
+		size = sock_fd_write(child[curr_children].fd_ch2child, ch, 1, conn_sock);
+		++curr_children;
+		if(curr_children >= NUM_CHILD) curr_children = 0;
 		DBG( printf ("master: wrote %d byte to worker (fd passing)\n", size);)
 			close(conn_sock);
 	}
@@ -163,12 +168,15 @@ void child_event_loop(int children_i, int fd_ch2parent, string root_directory) {
 	//char *buf_request;
 	static const char* templ = "HTTP/1.0 200 OK\r\n"
 					           "Content-length: %d\r\n"
-							   "Connection: close\r\n"
 							   "Content-Type: text/html\r\n"
 							   "\r\n";
 
 
-	static const char not_found[] = "HTTP/1.0 404 NOT FOUND\r\nContent-Type: text/html\r\n\r\n<h1>404 - File not found.</h1>";
+	static const char not_found_header[] = "HTTP/1.0 404 NOT FOUND\r\n"
+										   "Content-length: %d\r\n"
+										   "Content-Type: text/html\r\n"
+										   "\r\n";
+	static const char not_found_msg[]    = "<h1>404 - File not found.</h1>\r\n";
 
 	map<int, string> str_request; // num_socket:str_request;
 
@@ -194,6 +202,7 @@ void child_event_loop(int children_i, int fd_ch2parent, string root_directory) {
 	while(true) {
 		CHK2( epoll_events_count, epoll_wait(epfd, Events, MAX_EVENTS,-1));
 		DBG( printf("children %d: Epoll events count: %d\n", children_i, epoll_events_count);)
+		DBG( printf("children %d: PID: %d\n", children_i, getpid());)
 		for(i = 0; i < epoll_events_count ; ++i) {
 			int currfd = Events[i].data.fd;
 			// Сообщение с канала от родителя - принимаем дескриптор нового соединения
@@ -253,8 +262,10 @@ void child_event_loop(int children_i, int fd_ch2parent, string root_directory) {
 				string fullpath = root_directory + target_file;
 				FILE *fp = fopen(fullpath.c_str(), "r");
 				//cout << "\tFullpath: " << fullpath << endl;
-				if(fp == NULL) {
-					write(currfd, not_found, sizeof(not_found));
+				//cout << "\tFILE: " << fp << endl;
+				if( fp == NULL || !is_regular_file(fullpath.c_str()) ) {
+					dprintf(currfd, not_found_header, sizeof(not_found_msg));
+					write(currfd, not_found_msg, sizeof(not_found_msg));
 				} else {
 					struct stat buf;
 					fstat(fileno(fp), &buf);
@@ -263,14 +274,19 @@ void child_event_loop(int children_i, int fd_ch2parent, string root_directory) {
 					sendfile(currfd, fileno(fp), NULL, file_size);
 					fclose(fp);
 				}
-				close(currfd);
+				//close(currfd);
+				shutdown(currfd, SHUT_RDWR);
 				str_request[currfd] = "";
+				//printf("===================================================");
 			}
 		}
 	}
 
 };
 
+//-------------------------
+// Парсим азпрос на сервер
+//-------------------------
 int parse_request(string &str_request, string &method, string &uri, string &http_ver) {
 	int request_length = str_request.length();
 	if(request_length < sizeof("GET / HTTP/1.0\n"))

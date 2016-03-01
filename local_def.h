@@ -133,7 +133,12 @@ ssize_t sock_fd_read(int sock, void *buf, ssize_t bufsize, int *fd)
 	return size;
 }
 
-
+int is_regular_file(const char *path)
+{
+	struct stat path_stat;
+	stat(path, &path_stat);
+	return S_ISREG(path_stat.st_mode);
+}
 
 
 #endif
