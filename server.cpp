@@ -17,7 +17,7 @@
 #include <fcntl.h>
 #include <sys/sendfile.h>
 
-#define DEBUG
+//#define DEBUG
 #include "local_def.h"
 
 #define NUM_CHILD 3
@@ -108,7 +108,7 @@ int main(int argc, char **argv) {
 	//---------------------------------------
 	// Прием и передача сетевых соединиений
 	//---------------------------------------
-				
+	// TODO: перевести обмен с сокетом с write/read на send/recv				
 
 	ip = inet_addr(ip_str.c_str());
 	listen_port = (unsigned int) atol(port_str.c_str());
@@ -243,7 +243,7 @@ void child_event_loop(int children_i, int fd_ch2parent, string root_directory) {
 				//write(STDOUT_FILENO, str_request[currfd].c_str(), str_request[currfd].length() );
 				if( (str_request[currfd].find("\n\n") == string::npos) && (str_request[currfd].find("\n\r\n") == string::npos))
 					continue;
-				write(STDOUT_FILENO, str_request[currfd].c_str(), str_request[currfd].length() );
+				//write(STDOUT_FILENO, str_request[currfd].c_str(), str_request[currfd].length() );
 				
 				//-----------------------------------------------
 				// запрос полностью получен => парсим, отвечаем
